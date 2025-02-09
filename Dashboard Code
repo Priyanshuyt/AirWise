@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AirWise Sensor Data</title>
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <style>
+        :root {
+            --primary-color: #0095ff;
+            --warning-color: #ff9500;
+            --danger-color: #ff3b30;
+            --success-color: #34c759;
+            --background-color: #f5f7fa;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        body {
+            background-color: var(--background-color);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            color: var(--primary-color);
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        .connection-status {
+            padding: 8px 16px;
+            border-radius: 20px;
+            background-color: rgba(0,0,0,0.1);
+            color: #666;
+        }
+
+        .connection-status.connected {
+            background-color: var(--success-color);
+            color: white;
+        }
+
+        .warning-banner {
+            background-color: var(--warning-color);
+            color: white;
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .warning-banner i {
+            font-size: 24px;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+            width: 100%;
+        }
+
+        .sensor-card {
+            background: white;
+            border-radius: 16px;
+            padding: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        @media (max-width: 768px) {
+            .sensor-card {
+                padding: 10px;
+            }
+
+            .header h1 {
+                font-size: 1.8rem;
+            }
+
+            .sensor-card h2 {
+                font-size: 1.1rem;
+            }
+
+            .sensor-value {
+                font-size: 1.2rem;
+            }
+
+            body {
+                padding: 10px;
+            }
+        }
+
+        .sensor-card h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.25rem;
+        }
+
+        .vehicle-health {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .health-status {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .health-status.good {
+            background-color: rgba(52, 199, 89, 0.1);
+            color: var(--success-color);
+        }
+
+        .health-status.warning {
+            background-color: rgba(255, 149, 0, 0.1);
+            color: var(--warning-color);
+        }
+
+        .health-status.danger {
+            background-color: rgba(255, 59, 48, 0.1);
+            color: var(--danger-color);
+        }
+
+        .data-log {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .data-log h2 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .log-entry {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        @media (max-width: 480px) {
+            .log-entry {
+                flex-direction: column;
+                gap: 5px;
+            }
+
+            .health-status {
+                padding: 8px;
+                font-size: 0.9rem;
+            }
+
+            .warning-banner {
+                font-size: 0.9rem;
+                padding: 12px;
+            }
+        }
+
+        .loading {
+            color: var(--primary-color);
+            font-size: 1.5rem;
+            font-weight: 500;
+        }
+
+        .sensor-value {
+            text-align: center;
+            font-size: 1.5rem;
+            font-weight: 500;
+            color: #333;
+            margin-top: 10px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>AirWise Sensor Data</h1>
+        <div class="connection-status" id="connectionStatus">Connecting...</div>
+    </div>
+
+    <div class="warning-banner" id="securityWarning">
+        ⚠️ Warning: Ensure proper security rules are set for your database
+    </div>
+
+    <div class="vehicle-health" id="vehicleHealth">
+        <h2>Vehicle Health Status</h2>
+        <div id="healthAlerts"></div>
+    </div>
+
+    <div class="dashboard-grid">
+        <div class="sensor-card">
+            <h2>Carbon Monoxide (CO)</h2>
+            <div id="coGauge"></div>
+            <div class="sensor-value" id="coValue">0.00000</div>
+        </div>
+        <div class="sensor-card">
+            <h2>Hydrocarbons (HC)</h2>
+            <div id="hcGauge"></div>
+            <div class="sensor-value" id="hcValue">0.00000</div>
+        </div>
+        <div class="sensor-card">
+            <h2>Nitrogen Oxides (NOx)</h2>
+            <div id="noxGauge"></div>
+            <div class="sensor-value" id="noxValue">0.00000</div>
+        </div>
+    </div>
+
+    <div class="data-log">
+        <h2>Real-time Data Log</h2>
+        <div id="dataLog"></div>
+    </div>
+
+    <script type="module">
+        // Import Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBQ5C43KaL84tz9NoAKytwQwdMTlXOcXXg",
+            authDomain: "airwise-d7369.firebaseapp.com",
+            databaseURL: "https://airwise-d7369-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "airwise-d7369",
+            storageBucket: "airwise-d7369.firebasestorage.app",
+            messagingSenderId: "295312909088",
+            appId: "1:295312909088:web:3c9bd6a0042204115ead45",
+            measurementId: "G-MR09BJ0ZEF"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const database = getDatabase(app);
+
+        // Load Google Charts
+        google.charts.load('current', {'packages':['gauge']});
+        google.charts.setOnLoadCallback(initGauges);
+
+        let coGauge, hcGauge, noxGauge;
+
+        function initGauges() {
+            // Initialize gauges with responsive options
+            const gaugeOptions = {
+                width: window.innerWidth <= 768 ? 250 : 300,
+                height: window.innerWidth <= 768 ? 250 : 300,
+                redFrom: 2,
+                redTo: 5,
+                yellowFrom: 1,
+                yellowTo: 2,
+                minorTicks: 5,
+                
+                animation: {
+                    duration: 400,
+                    easing: 'out',
+                },
+            };
+
+            coGauge = new google.visualization.Gauge(document.getElementById('coGauge'));
+            hcGauge = new google.visualization.Gauge(document.getElementById('hcGauge'));
+            noxGauge = new google.visualization.Gauge(document.getElementById('noxGauge'));
+
+            // Draw initial gauges
+            const initialData = google.visualization.arrayToDataTable([['Label', 'Value'], ['', 0]]);
+            coGauge.draw(initialData, { ...gaugeOptions, max: 5 });
+            hcGauge.draw(initialData, { ...gaugeOptions, max: 5 });
+            noxGauge.draw(initialData, { ...gaugeOptions, max: 5 });
+
+            // Add resize listener for responsive gauges
+            window.addEventListener('resize', () => {
+                const width = window.innerWidth <= 768 ? 250 : 300;
+                const height = window.innerWidth <= 768 ? 250 : 300;
+
+                if (coGauge && hcGauge && noxGauge) {
+                    coGauge.draw(coGauge.getDataTable(), { ...gaugeOptions, width, height });
+                    hcGauge.draw(hcGauge.getDataTable(), { ...gaugeOptions, width, height });
+                    noxGauge.draw(noxGauge.getDataTable(), { ...gaugeOptions, width, height });
+                }
+            });
+
+            // Start listening to Firebase updates
+            listenToUpdates();
+        }
+
+        function updateVehicleHealth(data) {
+            const healthAlerts = document.getElementById('healthAlerts');
+            healthAlerts.innerHTML = '';
+
+            const thresholds = {
+                co: { warning: 1, danger: 4 },
+                hc: { warning: 0.2, danger: 0.4 },
+                nox: { warning: 0.2, danger: 0.4 }
+            };
+
+            const alerts = [];
+
+            // Check CO levels
+            if (data.final_co >= thresholds.co.danger) {
+                alerts.push({
+                    message: 'Critical CO levels detected! Immediate attention required.',
+                    type: 'danger'
+                });
+            } else if (data.final_co >= thresholds.co.warning) {
+                alerts.push({
+                    message: 'Elevated CO levels - Schedule maintenance soon',
+                    type: 'warning'
+                });
+            }
+
+            // Check HC levels
+            if (data.final_hc >= thresholds.hc.danger) {
+                alerts.push({
+                    message: 'High HC levels - Engine may need immediate service',
+                    type: 'danger'
+                });
+            } else if (data.final_hc >= thresholds.hc.warning) {
+                alerts.push({
+                    message: 'Increased HC levels - Check engine soon',
+                    type: 'warning'
+                });
+            }
+
+            // Check NOx levels
+            if (data.final_nox >= thresholds.nox.danger) {
+                alerts.push({
+                    message: 'Dangerous NOx levels detected! Check emission system',
+                    type: 'danger'
+                });
+            } else if (data.final_nox >= thresholds.nox.warning) {
+                alerts.push({
+                    message: 'NOx levels rising - Monitor vehicle performance',
+                    type: 'warning'
+                });
+            }
+
+            if (alerts.length === 0) {
+                alerts.push({
+                    message: 'All systems operating normally',
+                    type: 'good'
+                });
+            }
+
+            // Display alerts
+            alerts.forEach(alert => {
+                const alertDiv = document.createElement('div');
+                alertDiv.className = `health-status ${alert.type}`;
+                alertDiv.innerHTML = `
+                    ${alert.type === 'good' ? '✅' : alert.type === 'warning' ? '⚠️' : '🔴'} 
+                    ${alert.message}
+                `;
+                healthAlerts.appendChild(alertDiv);
+            });
+        }
+
+        function updateDataLog(data) {
+            const dataLog = document.getElementById('dataLog');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            const timestamp = new Date().toLocaleTimeString();
+            entry.innerHTML = `
+                <span>${timestamp}</span>
+                <span>CO: ${data.final_co} | HC: ${data.final_hc} | NOx: ${data.final_nox}</span>
+            `;
+            dataLog.insertBefore(entry, dataLog.firstChild);
+            if (dataLog.children.length > 10) {
+                dataLog.removeChild(dataLog.lastChild);
+            }
+        }
+
+        function listenToUpdates() {
+            const sensorRef = ref(database, 'final_sensor_data');
+            onValue(sensorRef, (snapshot) => {
+                const data = snapshot.val();
+
+                // Update connection status
+                document.getElementById('connectionStatus').textContent = 'Connected';
+                document.getElementById('connectionStatus').classList.add('connected');
+
+                // Update gauges
+                const gaugeOptions = {
+                    width: window.innerWidth <= 768 ? 250 : 300,
+                    height: window.innerWidth <= 768 ? 250 : 300,
+                    redFrom: 3,
+                    redTo: 5,
+                    yellowFrom: 1,
+                    yellowTo: 3,
+                    minorTicks: 5,
+                    max: 5,
+                    animation: {
+                        duration: 400,
+                        easing: 'out',
+                    },
+                };
+
+                coGauge.draw(google.visualization.arrayToDataTable([['Label', 'Value'], ['CO', data.final_co]]), gaugeOptions);
+                hcGauge.draw(google.visualization.arrayToDataTable([['Label', 'Value'], ['HC', data.final_hc]]), gaugeOptions);
+                noxGauge.draw(google.visualization.arrayToDataTable([['Label', 'Value'], ['NOx', data.final_nox]]), gaugeOptions);
+
+                // Update sensor values
+                document.getElementById('coValue').textContent = data.final_co.toFixed(5);
+                document.getElementById('hcValue').textContent = data.final_hc.toFixed(5);
+                document.getElementById('noxValue').textContent = data.final_nox.toFixed(5);
+
+                // Update vehicle health status
+                updateVehicleHealth(data);
+
+                // Update data log
+                updateDataLog(data);
+            });
+        }
+    </script>
+</body>
+</html>
+
