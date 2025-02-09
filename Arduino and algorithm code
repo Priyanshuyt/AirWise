@@ -1,0 +1,149 @@
+#include <ESP8266WiFi.h>
+#include <FirebaseESP8266.h>
+#include <FS.h>
+#include <math.h>
+
+// Wi-Fi credentials
+#define WIFI_SSID "Priyanshu"
+#define WIFI_PASSWORD "priyanshu"
+
+// Firebase project credentials
+#define FIREBASE_HOST "https://airwise-d7369-default-rtdb.asia-southeast1.firebasedatabase.app/"
+#define FIREBASE_AUTH "Your_Firebase_Secret"
+
+// Firebase objects
+FirebaseData firebaseData;
+FirebaseAuth auth;        
+FirebaseConfig config;     
+
+// Pin definitions
+const int mq3Pin = A0;     // ADC pin for MQ3 (HC) - ESP8266 has only one ADC pin (A0)
+const int mq7Pin = D1;     // Digital pin for MQ7 (CO)
+const int mq135Pin = D2;   // Digital pin for MQ135 (NOx)
+
+// Constants
+const float Vcc = 3.3;    // Supply voltage (ESP8266 uses 3.3V)
+const float R_L = 10.0;   // Load resistance in kΩ
+const float flowRate = 200; // Exhaust flow rate in L/min (adjust as needed)
+
+// R0 calibration values for each sensor
+float R0_mq3 = 10.0;
+float R0_mq7 = 10.0;
+float R0_mq135 = 10.0;
+
+// Emission calibration factors
+const float hcFactor = 0.00002;
+const float coFactor = 0.00005;
+const float noxFactor = 0.00003;
+
+void applyKMeans(float data[], int size, float &finalValue) {
+  // Simple K-Means with 2 clusters (low and high)
+  float meanLow = data[0];
+  float meanHigh = data[size - 1];
+
+  for (int iteration = 0; iteration < 5; iteration++) {
+    float sumLow = 0, sumHigh = 0;
+    int countLow = 0, countHigh = 0;
+
+    for (int i = 0; i < size; i++) {
+      if (abs(data[i] - meanLow) < abs(data[i] - meanHigh)) {
+        sumLow += data[i];
+        countLow++;
+      } else {
+        sumHigh += data[i];
+        countHigh++;
+      }
+    }
+
+    if (countLow > 0) meanLow = sumLow / countLow;
+    if (countHigh > 0) meanHigh = sumHigh / countHigh;
+  }
+
+  // Final value is the cluster center with more points
+  finalValue = (countLow > countHigh) ? meanLow : meanHigh;
+}
+
+void setup() {
+  Serial.begin(9600);
+
+  // Connect to Wi-Fi
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting to Wi-Fi");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(500);
+  }
+  Serial.println("\nConnected to Wi-Fi");
+
+  // Initialize SPIFFS
+  if (!SPIFFS.begin()) {
+    Serial.println("Failed to mount file system");
+    return;
+  }
+
+  // Firebase configuration
+  config.host = FIREBASE_HOST;
+  config.signer.tokens.legacy_token = FIREBASE_AUTH;
+
+  // Initialize Firebase
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
+  Serial.println("Firebase initialized");
+}
+
+void loop() {
+  float mq3Readings[10], mq7Readings[10], mq135Readings[10];
+
+  for (int i = 0; i < 10; i++) {
+    int mq3Value = analogRead(mq3Pin);
+    int mq7Value = digitalRead(mq7Pin);
+    int mq135Value = digitalRead(mq135Pin);
+
+    float mq3Voltage = (mq3Value / 1023.0) * Vcc; 
+    float mq7Voltage = mq7Value == HIGH ? Vcc : 0;
+    float mq135Voltage = mq135Value == HIGH ? Vcc : 0;
+
+    float Rs_mq3 = ((Vcc - mq3Voltage) / mq3Voltage) * R_L;
+    float Rs_mq7 = ((Vcc - mq7Voltage) / mq7Voltage) * R_L;
+    float Rs_mq135 = ((Vcc - mq135Voltage) / mq135Voltage) * R_L;
+
+    float ratio_mq3 = Rs_mq3 / R0_mq3;
+    float ratio_mq7 = Rs_mq7 / R0_mq7;
+    float ratio_mq135 = Rs_mq135 / R0_mq135;
+
+    mq3Readings[i] = pow(10, (log10(ratio_mq3) - 0.3) / -0.5);
+    mq7Readings[i] = pow(10, (log10(ratio_mq7) - 0.3) / -0.5);
+    mq135Readings[i] = pow(10, (log10(ratio_mq135) - 0.3) / -0.5);
+
+    delay(1000); // 1-second interval for each reading
+  }
+
+  // Print the raw readings to the Serial Monitor
+  Serial.println("\nRaw Sensor Readings:");
+  for (int i = 0; i < 10; i++) {
+    Serial.printf("MQ3: %.2f, MQ7: %.2f, MQ135: %.2f\n", mq3Readings[i], mq7Readings[i], mq135Readings[i]);
+  }
+
+  // K-Means to determine final values
+  float finalMQ3, finalMQ7, finalMQ135;
+  applyKMeans(mq3Readings, 10, finalMQ3);
+  applyKMeans(mq7Readings, 10, finalMQ7);
+  applyKMeans(mq135Readings, 10, finalMQ135);
+
+  
+  FirebaseJson json;
+  json.add("final_hc", finalMQ3 * hcFactor * flowRate);
+  json.add("final_co", finalMQ7 * coFactor * flowRate);
+  json.add("final_nox", finalMQ135 * noxFactor * flowRate);
+
+  // Send final values to Firebase
+  String path = "/final_sensor_data";
+  if (Firebase.setJSON(firebaseData, path, json)) {
+    Serial.println("Final values sent to Firebase");
+  } else {
+    Serial.print("Failed to send data: ");
+    Serial.println(firebaseData.errorReason());
+  }
+
+  delay(5000); // Wait for 5 seconds before the next batch
+}
